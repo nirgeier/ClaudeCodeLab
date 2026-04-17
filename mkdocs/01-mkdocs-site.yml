@@ -1,0 +1,12 @@
+###
+### mkdocs-site.yml
+###
+docs_dir: Labs
+edit_uri:
+repo_name: nirgeier/Claude-Code-Lab
+repo_url: https://github.com/nirgeier/Claude-Code-Lab
+site_author: Nir Geier - nirgeier@gmail.com
+site_description: Claude Code Deep Dive Labs
+site_dir: ./mkdocs-site
+site_name: Claude-Code-Lab
+site_url: https://nirgeier.github.io/Claude-Code-Lab/
