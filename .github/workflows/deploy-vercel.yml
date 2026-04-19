@@ -1,0 +1,90 @@
+name: Deploy to Vercel
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      deployments: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Checkout submodules
+        env:
+          GH_PAT: ${{ secrets.GH_PAT }}
+        run: |
+          # Clear checkout action's persisted credentials so PAT takes effect
+          git config --local --unset-all http.https://github.com/.extraheader || true
+          if [ -n "$GH_PAT" ]; then
+            git config --global url."https://x-access-token:${GH_PAT}@github.com/".insteadOf "https://github.com/"
+          fi
+          git submodule update --init --recursive
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Cache Python packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
+      - name: Install uv
+        run: pip install uv
+
+      - name: Install dependencies
+        run: |
+          if [ -f mkdocs/requirements.txt ]; then
+            uv pip install --system -r mkdocs/requirements.txt
+          elif [ -f .mkdocs-build/requirements.txt ]; then
+            uv pip install --system -r .mkdocs-build/requirements.txt
+          elif [ -f .mkdocs-shared/mkdocs/requirements.txt ]; then
+            uv pip install --system -r .mkdocs-shared/mkdocs/requirements.txt
+          else
+            uv pip install --system mkdocs==1.5.3 mkdocs-material==9.4.14 mkdocs-awesome-pages-plugin==2.9.2 mkdocs-git-committers-plugin-2==0.3.6 mkdocs-git-revision-date-localized-plugin==1.12.5
+          fi
+
+      - name: Prepare MkDocs build directory
+        run: |
+          # Create .mkdocs-build/ by merging shared base + project overrides
+          # (needed for custom_dir: .mkdocs-build/overrides in mkdocs.yml)
+          if [ -d .mkdocs-shared/mkdocs ]; then
+            rm -rf .mkdocs-build
+            mkdir -p .mkdocs-build
+            cp -r .mkdocs-shared/mkdocs/. .mkdocs-build/
+            [ -d mkdocs ] && cp -rf mkdocs/. .mkdocs-build/
+            echo "✅ Merged .mkdocs-shared/mkdocs + mkdocs/ → .mkdocs-build/"
+          fi
+
+      - name: Build MkDocs
+        run: mkdocs build -f mkdocs.yml -d mkdocs-site
+
+      - name: Install Vercel CLI
+        run: npm install -g vercel
+
+      - name: Deploy to Vercel (Production)
+        env:
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: |
+          vercel --prod --yes \
+            --token=${{ secrets.VERCEL_TOKEN }} \
+            --confirm
+
+      - name: Deployment Status
+        run: echo "✅ Successfully deployed to Vercel"
